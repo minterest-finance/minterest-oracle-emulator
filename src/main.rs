@@ -1,9 +1,13 @@
 use codec::Decode;
-use keyring::AccountKeyring;
+use sp_keyring::AccountKeyring;
 
 use codec::Compact;
 use minterest_primitives::{currency::TokenSymbol, Balance, CurrencyId, Price};
+use node_minterest_runtime::Event;
+
+use frame_system::EventRecord;
 use sp_core::crypto::{Pair, Public};
+use sp_core::H256 as Hash;
 use std::convert::TryFrom;
 use std::fmt::Debug;
 use std::{thread, time};
@@ -68,8 +72,56 @@ fn submit_new_value(round_id: u32, value: u32) {
     println!("[+] Transaction got included. Hash: {:?}", tx_hash);
 }
 
+fn minterest_event_listener() {
+    let url = "127.0.0.1:9944";
+    let signer = AccountKeyring::Charlie.pair();
+    let api = Api::new(format!("ws://{}", url))
+        .map(|api| api.set_signer(signer.clone()))
+        .unwrap();
+
+    println!("Subscribe to events");
+    let (events_in, events_out) = channel();
+    api.subscribe_events(events_in).unwrap();
+
+    loop {
+        let event_str = events_out.recv().unwrap();
+
+        let _unhex = Vec::from_hex(event_str).unwrap();
+        let mut _er_enc = _unhex.as_slice();
+        let _events = Vec::<EventRecord<Event, Hash>>::decode(&mut _er_enc);
+        // TODO should we need to wait only for events from finalized block?
+        match _events {
+            Ok(evts) => {
+                for evr in &evts {
+                    println!("decoded: {:?} {:?}", evr.phase, evr.event);
+                    match &evr.event {
+                        Event::ChainlinkPriceManager(be) => {
+                            println!(">>>>>>>>>> chainlink price manager event: {:?}", be);
+                            match &be {
+                                chainlink_price_manager::Event::InitiateNewRound(
+                                    feed_id,
+                                    round_id,
+                                ) => {
+                                    println!("INITIATE NEW ROUND CAUGHT!");
+                                }
+                                _ => {
+                                    println!("ignoring unsupported balances event");
+                                }
+                            }
+                        }
+                        _ => println!("ignoring unsupported module event: {:?}", evr.event),
+                    }
+                }
+            }
+            Err(_) => println!("couldn't decode event record list"),
+        }
+    }
+}
+
 fn main() {
     create_feeds();
+
+    let handler = thread::spawn(|| minterest_event_listener());
 
     for n in 1..101 {
         let ten_sec = time::Duration::from_millis(10000);
