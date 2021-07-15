@@ -2,10 +2,13 @@ use codec::Decode;
 use sp_keyring::AccountKeyring;
 
 use codec::Compact;
-use minterest_primitives::{currency::TokenSymbol, Balance, CurrencyId, Price};
+use minterest_primitives::{currency::*, Balance, CurrencyId, Price};
 use node_minterest_runtime::Event;
 
+use coingecko::{Client, SimplePrice, SimplePriceReq, SimplePrices};
 use frame_system::EventRecord;
+use futures::executor::block_on;
+use rust_decimal::prelude::*;
 use sp_core::crypto::{Pair, Public};
 use sp_core::H256 as Hash;
 use std::convert::TryFrom;
@@ -16,13 +19,14 @@ use substrate_api_client::{
     XtStatus,
 };
 
+use minterest_primitives::currency::CurrencyType::UnderlyingAsset;
+use std::collections::HashMap;
 use std::sync::mpsc::channel;
-pub const ETH: CurrencyId = CurrencyId::UnderlyingAsset(TokenSymbol::ETH);
 
 // TODO get last feed round
 
 // This function for testing purpose to automate add oracles
-fn create_feeds() {
+fn create_feeds(currency_id: CurrencyId) {
     let url = "127.0.0.1:9944";
     let signer = AccountKeyring::Alice.pair();
     let api = Api::new(format!("ws://{}", url))
@@ -36,7 +40,7 @@ fn create_feeds() {
         api.metadata.clone(),
         "ChainlinkPriceManager",
         "create_minterest_feed",
-        ETH,
+        currency_id,
         1,
         vec![(oracle, oracle_admin)]
     );
@@ -50,7 +54,7 @@ fn create_feeds() {
     println!("[+] Transaction got included. Hash: {:?}", tx_hash);
 }
 
-fn submit_new_value(round_id: u32, value: u32) {
+fn submit_new_value(round_id: u32, value: u32, cur_id: CurrencyId) {
     let url = "127.0.0.1:9944";
     let signer = AccountKeyring::Charlie.pair();
     let api = Api::new(format!("ws://{}", url))
@@ -59,9 +63,9 @@ fn submit_new_value(round_id: u32, value: u32) {
 
     let xt: UncheckedExtrinsicV4<_> = compose_extrinsic!(
         api.clone(),
-        "ChainlinkFeed",
+        "ChainlinkPriceManager",
         "submit",
-        Compact(0_u32),
+        cur_id,
         Compact(round_id),
         Compact(value)
     );
@@ -70,6 +74,33 @@ fn submit_new_value(round_id: u32, value: u32) {
         .send_extrinsic(xt.hex_encode(), XtStatus::InBlock)
         .unwrap();
     println!("[+] Transaction got included. Hash: {:?}", tx_hash);
+}
+
+fn get_prices() -> SimplePrices {
+    block_on(async {
+        let http = isahc::HttpClient::new().unwrap();
+
+        let client = Client::new(http);
+
+        let req = SimplePriceReq::new("ethereum,polkadot,bitcoin,kusama".into(), "usd".into())
+            .include_market_cap()
+            .include_24hr_vol()
+            .include_24hr_change()
+            .include_last_updated_at();
+        client.simple_price(req).await
+    })
+    .unwrap()
+}
+
+fn uderlying_to_string(cur_id: CurrencyId) -> &'static str {
+    // ethereum,polkadot,bitcoin,kusama"
+    match cur_id {
+        ETH => "ethereum",
+        DOT => "polkadot",
+        KSM => "kusama",
+        BTC => "bitcoin",
+        _ => panic!(),
+    }
 }
 
 fn minterest_event_listener() {
@@ -102,14 +133,24 @@ fn minterest_event_listener() {
                                     feed_id,
                                     round_id,
                                 ) => {
-                                    println!("INITIATE NEW ROUND CAUGHT!");
+                                    let prices = get_prices();
+
+                                    for token in
+                                        CurrencyId::get_enabled_tokens_in_protocol(UnderlyingAsset)
+                                    {
+                                        let token_name = uderlying_to_string(token);
+                                        let val = prices[token_name]["usd"].to_u32();
+                                        println!("Token name: {:?}, price: {:?}", token_name, val);
+                                        submit_new_value(*round_id, val.unwrap(), token);
+                                    }
+                                    // submit_new_value(*round_id, *round_id);
                                 }
                                 _ => {
                                     println!("ignoring unsupported balances event");
                                 }
                             }
                         }
-                        _ => println!("ignoring unsupported module event: {:?}", evr.event),
+                        _ => {} // println!("ignoring unsupported module event: {:?}", evr.event),
                     }
                 }
             }
@@ -119,15 +160,39 @@ fn minterest_event_listener() {
 }
 
 fn main() {
-    create_feeds();
+    create_feeds(ETH);
+    create_feeds(BTC);
+    create_feeds(DOT);
+    create_feeds(KSM);
+    minterest_event_listener();
 
-    let handler = thread::spawn(|| minterest_event_listener());
+    // for token in CurrencyId::get_enabled_tokens_in_protocol(UnderlyingAsset) {
+    //     println!("Token: {:?}", token);
+    // }
+    // let res = block_on(async {
+    //     let http = isahc::HttpClient::new().unwrap();
 
-    for n in 1..101 {
-        let ten_sec = time::Duration::from_millis(10000);
-        thread::sleep(ten_sec);
-        submit_new_value(n, n);
-    }
+    //     let client = Client::new(http);
+
+    //     let req = SimplePriceReq::new("ethereum,polkadot,bitcoin,kusama".into(), "usd".into())
+    //         .include_market_cap()
+    //         .include_24hr_vol()
+    //         .include_24hr_change()
+    //         .include_last_updated_at();
+    //     client.simple_price(req).await
+    // })
+    // .unwrap();
+
+    let res = get_prices();
+    println!("{:#?}", res["ethereum"]["usd"]);
+    println!("{:#?}", res["ethereum"]["usd"].to_u128());
+    // let handler = thread::spawn(|| minterest_event_listener());
+
+    // for n in 1..101 {
+    //     let ten_sec = time::Duration::from_millis(10000);
+    //     thread::sleep(ten_sec);
+    //     submit_new_value(n, n);
+    // }
 
     // let url = "127.0.0.1:9944";
     // let signer = AccountKeyring::Charlie.pair();
