@@ -3,7 +3,7 @@ use sp_keyring::AccountKeyring;
 
 use codec::Compact;
 use minterest_primitives::{currency::*, Balance, CurrencyId, Price};
-use node_minterest_runtime::Event;
+use node_minterest_runtime::{Event, Header};
 
 use coingecko::{Client, SimplePrice, SimplePriceReq, SimplePrices};
 use frame_system::EventRecord;
@@ -15,8 +15,8 @@ use std::convert::TryFrom;
 use std::fmt::Debug;
 use std::{thread, time};
 use substrate_api_client::{
-    compose_call, compose_extrinsic, utils::FromHexString, Api, Metadata, UncheckedExtrinsicV4,
-    XtStatus,
+    compose_call, compose_extrinsic, compose_extrinsic_offline, utils::FromHexString, Api,
+    Metadata, UncheckedExtrinsicV4, XtStatus,
 };
 
 use minterest_primitives::currency::CurrencyType::UnderlyingAsset;
@@ -54,6 +54,8 @@ fn create_feeds(currency_id: CurrencyId) {
     println!("[+] Transaction got included. Hash: {:?}", tx_hash);
 }
 
+static mut nonce: u32 = 0;
+
 fn submit_new_value(round_id: u32, value: u32, cur_id: CurrencyId) {
     let url = "127.0.0.1:9944";
     let signer = AccountKeyring::Charlie.pair();
@@ -61,8 +63,8 @@ fn submit_new_value(round_id: u32, value: u32, cur_id: CurrencyId) {
         .map(|api| api.set_signer(signer.clone()))
         .unwrap();
 
-    let xt: UncheckedExtrinsicV4<_> = compose_extrinsic!(
-        api.clone(),
+    let call = compose_call!(
+        api.metadata.clone(),
         "ChainlinkPriceManager",
         "submit",
         cur_id,
@@ -70,10 +72,37 @@ fn submit_new_value(round_id: u32, value: u32, cur_id: CurrencyId) {
         Compact(value)
     );
 
-    let tx_hash = api
-        .send_extrinsic(xt.hex_encode(), XtStatus::InBlock)
-        .unwrap();
-    println!("[+] Transaction got included. Hash: {:?}", tx_hash);
+    // Information for Era for mortal transactions
+    let head = api.get_finalized_head().unwrap().unwrap();
+    let h: Header = api.get_header(Some(head)).unwrap().unwrap();
+    let period = 5;
+
+    unsafe {
+        #[allow(clippy::redundant_clone)]
+        let xt: UncheckedExtrinsicV4<_> = compose_extrinsic_offline!(
+            api.clone().signer.unwrap(),
+            call.clone(),
+            nonce,
+            Era::mortal(period, h.number.into()),
+            api.genesis_hash,
+            head,
+            api.runtime_version.spec_version,
+            api.runtime_version.transaction_version
+        );
+        nonce += 1;
+        api.send_extrinsic(xt.hex_encode(), XtStatus::Ready)
+            .unwrap();
+    }
+    // let xt: UncheckedExtrinsicV4<_> = compose_extrinsic!(
+    //     api.clone(),
+    //     "ChainlinkPriceManager",
+    //     "submit",
+    //     cur_id,
+    //     Compact(round_id),
+    //     Compact(value)
+    // );
+
+    // println!("[+] Transaction got included. Hash: {:?}", tx_hash);
 }
 
 fn get_prices() -> SimplePrices {
@@ -134,13 +163,19 @@ fn minterest_event_listener() {
                                     round_id,
                                 ) => {
                                     let prices = get_prices();
+                                    println!("Prices: {:?}", prices);
 
                                     for token in
                                         CurrencyId::get_enabled_tokens_in_protocol(UnderlyingAsset)
                                     {
                                         let token_name = uderlying_to_string(token);
                                         let val = prices[token_name]["usd"].to_u32();
-                                        println!("Token name: {:?}, price: {:?}", token_name, val);
+                                        let float_val = prices[token_name]["usd"].to_f64();
+                                        println!(
+                                            "Token name: {:?}, price: {:?}",
+                                            token_name, float_val
+                                        );
+
                                         submit_new_value(*round_id, val.unwrap(), token);
                                     }
                                     // submit_new_value(*round_id, *round_id);
@@ -160,6 +195,13 @@ fn minterest_event_listener() {
 }
 
 fn main() {
+    // let minterest_node_addr = std::env::args().nth(1).expect(
+    //     "Expect minterest node address as first argument. \
+    //     example usage: ./minterest-oracle 127.0.0.1:9944",
+    // );
+
+    // println!("Minterest node address: {:?}", minterest_node_addr);
+
     create_feeds(ETH);
     create_feeds(BTC);
     create_feeds(DOT);
