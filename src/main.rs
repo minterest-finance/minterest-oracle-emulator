@@ -48,7 +48,7 @@ fn get_feed_descrtiption(currency_id: CurrencyId) -> &'static str {
 
 // This function for testing purpose to automate add oracles
 fn create_feeds() {
-    println!("Start feed creating");
+    println!("Start feed creating. Don't interupt the service!");
     create_chainlink_feed(ETH);
     create_chainlink_feed(DOT);
     create_chainlink_feed(KSM);
@@ -79,8 +79,8 @@ fn create_chainlink_feed(currency_id: CurrencyId) {
         get_feed_descrtiption(currency_id), // description
         0_u32,                              // restart delay
         vec![(oracle, oracle_admin)],       // oracles
-        Some(100_u32),                      // prunning window
-        Some(10_u128.pow(20))               // max debt
+        Option::<u32>::None,                // prunning window
+        Option::<u128>::None                // max debt
     );
 
     let tx_hash = api
@@ -97,6 +97,13 @@ fn submit_new_value(feed_id: u32, round_id: u32, value: u128) {
     let api = Api::new(format!("ws://{}", url))
         .map(|api| api.set_signer(signer.clone()))
         .unwrap();
+
+    unsafe {
+        if api.get_nonce().unwrap() > nonce {
+            // it covers the case when service was restarted, and nonce should be greater than zero
+            nonce = api.get_nonce().unwrap();
+        }
+    }
 
     let call = compose_call!(
         api.metadata.clone(),
@@ -179,7 +186,7 @@ fn minterest_event_listener() {
         match _events {
             Ok(evts) => {
                 for evr in &evts {
-                    println!("decoded: {:?} {:?}", evr.phase, evr.event);
+                    // println!("decoded: {:?} {:?}", evr.phase, evr.event);
                     match &evr.event {
                         Event::ChainlinkPriceManager(be) => {
                             println!(">>>>>>>>>> chainlink price manager event: {:?}", be);
@@ -202,6 +209,7 @@ fn minterest_event_listener() {
                                             price,
                                             converted_price
                                         );
+
                                         submit_new_value(
                                             get_feed_id(token),
                                             *round_id,
@@ -223,6 +231,22 @@ fn minterest_event_listener() {
     }
 }
 
+// If at least one feed was created we assume that this service already created feeds
+fn is_feeds_were_created() -> bool {
+    let url = "127.0.0.1:9944";
+    let signer = AccountKeyring::Charlie.pair();
+    let api = Api::new(format!("ws://{}", url))
+        .map(|api| api.set_signer(signer.clone()))
+        .unwrap();
+
+    let feeds: Option<u32> = api
+        .get_storage_value("ChainlinkFeed", "FeedCounter", None)
+        .unwrap();
+
+    // if any feeds wan't created, rpc aboce returns Option<None>
+    !feeds.is_none()
+}
+
 fn convert_rust_decimal_to_u128_18(val: &Decimal) -> u128 {
     let multiplier = Decimal::new(10_i64.pow(18), 0);
     let integer = val.trunc() * multiplier;
@@ -232,6 +256,8 @@ fn convert_rust_decimal_to_u128_18(val: &Decimal) -> u128 {
 }
 
 fn main() {
-    create_feeds();
+    if !is_feeds_were_created() {
+        create_feeds();
+    }
     minterest_event_listener();
 }
