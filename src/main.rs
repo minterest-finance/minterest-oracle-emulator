@@ -1,27 +1,21 @@
-use codec::Decode;
-use sp_keyring::AccountKeyring;
-
-use codec::Compact;
-use minterest_primitives::{currency::*, CurrencyId};
-use node_minterest_runtime::{Balance, BlockNumber, Event, Header};
-
-use coingecko::{Client, SimplePrice, SimplePriceReq, SimplePrices};
+use codec::{Compact, Decode};
+use coingecko::{Client, SimplePriceReq, SimplePrices};
 use frame_system::EventRecord;
 use futures::executor::block_on;
+use log::{debug, info, trace, warn, LevelFilter};
+use minterest_primitives::{currency::*, CurrencyId};
+use node_minterest_runtime::{BlockNumber, Event, Header};
 use rust_decimal::prelude::*;
-use sp_core::crypto::{Pair, Public};
+use simple_logger::SimpleLogger;
+use sp_core::crypto::Pair;
 use sp_core::H256 as Hash;
-use sp_runtime::FixedU128;
-use std::convert::TryFrom;
-use std::fmt::Debug;
-use std::{thread, time};
+use sp_keyring::AccountKeyring;
 use substrate_api_client::{
     compose_call, compose_extrinsic, compose_extrinsic_offline, utils::FromHexString, Api,
-    Metadata, UncheckedExtrinsicV4, XtStatus,
+    UncheckedExtrinsicV4, XtStatus,
 };
 
 use minterest_primitives::currency::CurrencyType::UnderlyingAsset;
-use std::collections::HashMap;
 use std::sync::mpsc::channel;
 
 // TODO get last feed round
@@ -48,12 +42,12 @@ fn get_feed_descrtiption(currency_id: CurrencyId) -> &'static str {
 
 // This function for testing purpose to automate add oracles
 fn create_feeds() {
-    println!("Start feed creating. Don't interupt the service!");
+    log::info!("Start feed creating. Don't interrupt the service!");
     create_chainlink_feed(ETH);
     create_chainlink_feed(DOT);
     create_chainlink_feed(KSM);
     create_chainlink_feed(BTC);
-    println!("Finish feed creating");
+    log::info!("Finish feed creating");
     // sequence is important! (see get_feed_id)
 }
 
@@ -86,7 +80,7 @@ fn create_chainlink_feed(currency_id: CurrencyId) {
     let tx_hash = api
         .send_extrinsic(xt.hex_encode(), XtStatus::InBlock)
         .unwrap();
-    println!("[+] Transaction got included. Hash: {:?}", tx_hash);
+    log::info!("[+] Transaction got included. Hash: {:?}", tx_hash);
 }
 
 static mut nonce: u32 = 0;
@@ -134,7 +128,6 @@ fn submit_new_value(feed_id: u32, round_id: u32, value: u128) {
         let tx_hash = api
             .send_extrinsic(xt.hex_encode(), XtStatus::Ready)
             .unwrap();
-        println!("[+] Transaction got included. Hash: {:?}", tx_hash);
     }
 }
 
@@ -172,7 +165,7 @@ fn minterest_event_listener() {
         .map(|api| api.set_signer(signer.clone()))
         .unwrap();
 
-    println!("Subscribe to events");
+    log::info!("Subscribe to events");
     let (events_in, events_out) = channel();
     api.subscribe_events(events_in).unwrap();
 
@@ -189,7 +182,7 @@ fn minterest_event_listener() {
                     // println!("decoded: {:?} {:?}", evr.phase, evr.event);
                     match &evr.event {
                         Event::ChainlinkPriceManager(be) => {
-                            println!(">>>>>>>>>> chainlink price manager event: {:?}", be);
+                            log::info!("Chainlink price manager event: {:?}", be);
                             match &be {
                                 chainlink_price_manager::Event::InitiateNewRound(
                                     feed_id,
@@ -203,7 +196,7 @@ fn minterest_event_listener() {
                                         let price = prices[token_name]["usd"];
                                         let converted_price =
                                             convert_rust_decimal_to_u128_18(&price);
-                                        println!(
+                                        log::info!(
                                             "Token name: {:?}, price: {:?}, converted_price: {:?}",
                                             underlying_to_string(token),
                                             price,
@@ -218,7 +211,7 @@ fn minterest_event_listener() {
                                     }
                                 }
                                 _ => {
-                                    println!("ignoring unsupported balances event");
+                                    log::debug!("ignoring unsupported balances event");
                                 }
                             }
                         }
@@ -256,6 +249,16 @@ fn convert_rust_decimal_to_u128_18(val: &Decimal) -> u128 {
 }
 
 fn main() {
+    SimpleLogger::new()
+        .with_level(LevelFilter::Info)
+        .with_module_level("substrate_api_client", LevelFilter::Warn)
+        .with_module_level("ws", LevelFilter::Warn)
+        .init()
+        .unwrap();
+
+    // SimpleLogger::new()
+    //     .init_with_level(log::Level::Info)
+    //     .unwrap();
     if !is_feeds_were_created() {
         create_feeds();
     }

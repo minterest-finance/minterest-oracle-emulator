@@ -141,6 +141,7 @@ sp-authorship = { git = "https://github.com/paritytech//substrate", rev = "1b758
 
 
 [dependencies]
+simple_logger = "1.12.0"
 log = "0.4"
 substrate-api-client = { git = "https://github.com/scs/substrate-api-client.git" }
 codec = { package = "parity-scale-codec", features = ["derive"], version = "2.0.0" }
@@ -150,7 +151,6 @@ chainlink-price-manager = { path = "../minterest-chain-node/pallets/chainlink-pr
 node-minterest-runtime = { path = "../minterest-chain-node/runtime" } 
 sp-core = { default-features = false, git = "https://github.com/paritytech/substrate",  branch = "polkadot-v0.9.8" }
 sp-keyring = { default-features = false, git = "https://github.com/paritytech/substrate",  branch = "polkadot-v0.9.8" }
-sp-runtime = { default-features = false, git = "https://github.com/paritytech/substrate",  branch = "polkadot-v0.9.8" }
 frame-system = { git = "https://github.com/paritytech/substrate", branch = "polkadot-v0.9.8"}
 coingecko = { git = "https://github.com/mmstick/coingecko-rs", rev = "1b99e9299327ee6e97930faa955ac02713eb8107"}
 isahc = { version = "0.9", default-features = false, features = ["http2", "text-decoding"]}

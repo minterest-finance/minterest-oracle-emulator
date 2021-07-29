@@ -784,6 +784,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "colored"
+version = "1.9.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f4ffc801dacf156c5854b9df4f425a626539c3a6ef7893cc0c5084a23f0b6c59"
+dependencies = [
+ "atty",
+ "lazy_static",
+ "winapi 0.3.9",
+]
+
+[[package]]
 name = "concurrent-queue"
 version = "1.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3031,9 +3042,9 @@ dependencies = [
  "parity-scale-codec 2.2.0",
  "rust_decimal",
  "rust_decimal_macros",
+ "simple_logger",
  "sp-core",
  "sp-keyring",
- "sp-runtime",
  "substrate-api-client",
 ]
 
@@ -5369,6 +5380,19 @@ dependencies = [
  "num-complex",
  "num-traits",
  "paste",
+]
+
+[[package]]
+name = "simple_logger"
+version = "1.12.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "239cadbc4538dcbe2847f5df644a0ace41917dea518d42d04e41b0e67294cdfd"
+dependencies = [
+ "atty",
+ "chrono",
+ "colored",
+ "log",
+ "winapi 0.3.9",
 ]
 
 [[package]]
