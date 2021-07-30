@@ -16,7 +16,8 @@ use substrate_api_client::{
 };
 
 use minterest_primitives::currency::CurrencyType::UnderlyingAsset;
-use std::sync::mpsc::channel;
+use std::sync::mpsc::{channel, Receiver};
+use std::{thread, time};
 
 // TODO get last feed round
 
@@ -47,7 +48,7 @@ fn create_feeds() {
     create_chainlink_feed(DOT);
     create_chainlink_feed(KSM);
     create_chainlink_feed(BTC);
-    log::info!("Finish feed creating");
+    log::info!("Feed creating is finished");
     // sequence is important! (see get_feed_id)
 }
 
@@ -158,28 +159,44 @@ fn underlying_to_string(cur_id: CurrencyId) -> &'static str {
     }
 }
 
-fn minterest_event_listener() {
+fn start_listen_events<T>() -> Option<Receiver<String>> {
     let url = "127.0.0.1:9944";
     let signer = AccountKeyring::Charlie.pair();
     let api = Api::new(format!("ws://{}", url))
         .map(|api| api.set_signer(signer.clone()))
-        .unwrap();
+        .ok()?;
 
-    log::info!("Subscribe to events");
     let (events_in, events_out) = channel();
-    api.subscribe_events(events_in).unwrap();
+    api.subscribe_events(events_in).ok()?;
+    log::info!("Subscribed to events");
+    Some(events_out)
+}
 
+fn minterest_event_listener() {
+    let mut events_out = start_listen_events::<String>().unwrap();
     loop {
-        let event_str = events_out.recv().unwrap();
+        let event_str = events_out.recv();
+        if event_str.is_err() {
+            log::error!(
+                "Recieve event error. Minterest node shutd down or connection is lost.
+                 Trying to reconnect"
+            );
+            let eo = start_listen_events::<String>();
+            if !eo.is_none() {
+                events_out = eo.unwrap();
+            }
+            // Timeout 1 second for reconnection
+            thread::sleep(time::Duration::from_millis(1000));
+            continue;
+        }
+        let event_str = event_str.unwrap();
 
         let _unhex = Vec::from_hex(event_str).unwrap();
         let mut _er_enc = _unhex.as_slice();
         let _events = Vec::<EventRecord<Event, Hash>>::decode(&mut _er_enc);
-        // TODO should we need to wait only for events from finalized block?
         match _events {
             Ok(evts) => {
                 for evr in &evts {
-                    // println!("decoded: {:?} {:?}", evr.phase, evr.event);
                     match &evr.event {
                         Event::ChainlinkPriceManager(be) => {
                             log::info!("Chainlink price manager event: {:?}", be);
@@ -219,7 +236,7 @@ fn minterest_event_listener() {
                     }
                 }
             }
-            Err(_) => println!("couldn't decode event record list"),
+            Err(_) => log::warn!("couldn't decode event record list"),
         }
     }
 }
@@ -256,9 +273,6 @@ fn main() {
         .init()
         .unwrap();
 
-    // SimpleLogger::new()
-    //     .init_with_level(log::Level::Info)
-    //     .unwrap();
     if !is_feeds_were_created() {
         create_feeds();
     }

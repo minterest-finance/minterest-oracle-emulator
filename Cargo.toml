@@ -147,7 +147,6 @@ substrate-api-client = { git = "https://github.com/scs/substrate-api-client.git"
 codec = { package = "parity-scale-codec", features = ["derive"], version = "2.0.0" }
 minterest-primitives = { git = "https://github.com/minterest-finance/minterest-chain-node" }
 chainlink-price-manager = { path = "../minterest-chain-node/pallets/chainlink-price-manager" } 
-# node-minterest-runtime = { git = "https://github.com/minterest-finance/minterest-chain-node" }
 node-minterest-runtime = { path = "../minterest-chain-node/runtime" } 
 sp-core = { default-features = false, git = "https://github.com/paritytech/substrate",  branch = "polkadot-v0.9.8" }
 sp-keyring = { default-features = false, git = "https://github.com/paritytech/substrate",  branch = "polkadot-v0.9.8" }
