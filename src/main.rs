@@ -2,21 +2,24 @@ use codec::{Compact, Decode};
 use coingecko::{Client, SimplePriceReq, SimplePrices};
 use frame_system::EventRecord;
 use futures::executor::block_on;
-use log::{debug, info, trace, warn, LevelFilter};
+use log::{info, LevelFilter};
 use minterest_primitives::{currency::*, CurrencyId};
-use node_minterest_runtime::{BlockNumber, Event, Header};
+use minterest_standalone_runtime::{BlockNumber, Event, Header};
 use rust_decimal::prelude::*;
 use simple_logger::SimpleLogger;
 use sp_core::crypto::Pair;
 use sp_core::H256 as Hash;
 use sp_keyring::AccountKeyring;
+use std::{
+    collections::HashMap,
+    env,
+    sync::mpsc::{channel, Receiver},
+    thread, time,
+};
 use substrate_api_client::{
     compose_call, compose_extrinsic, compose_extrinsic_offline, utils::FromHexString, Api,
     UncheckedExtrinsicV4, XtStatus,
 };
-
-use std::sync::mpsc::{channel, Receiver};
-use std::{env, thread, time};
 
 // request for coinmarketcap (sandbox key)
 // curl -H "X-CMC_PRO_API_KEY: b54bcf4d-1bca-4e8e-9a24-22ff2c3d462c" -H "Accept: application/json" -d "symbol=ETH,BTC,DOT,KSM" -G https://sandbox-api.coinmarketcap.com/v1/cryptocurrency/quotes/latest
@@ -25,11 +28,8 @@ use std::{env, thread, time};
 
 // coinmarketcap api key (demo env)
 const COINMARKETCAP_DEMO_KEY: &'static str = "b54bcf4d-1bca-4e8e-9a24-22ff2c3d462c";
-const COINMARKETCAP_DEMO_API_URL: &'static str = "https://sandbox-api.coinmarketcap.com/v1/cryptocurrency/quotes/latest";
-
-use rust_decimal::Decimal;
-use serde::Deserialize;
-use std::collections::HashMap;
+const COINMARKETCAP_DEMO_API_URL: &'static str =
+    "https://sandbox-api.coinmarketcap.com/v1/cryptocurrency/quotes/latest";
 
 #[derive(Default, Debug, Clone, PartialEq, serde_derive::Serialize, serde_derive::Deserialize)]
 #[serde(rename_all = "camelCase")]

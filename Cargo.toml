@@ -1,5 +1,5 @@
 [package]
-name = "minterest-oracle"
+name = "minterest-oracle-emulator"
 version = "0.1.0"
 authors = ["Anatolii Kurotych <akurotych@gmail.com>"]
 edition = "2018"
@@ -145,9 +145,17 @@ simple_logger = "1.12.0"
 log = "0.4"
 substrate-api-client = { git = "https://github.com/scs/substrate-api-client.git" }
 codec = { package = "parity-scale-codec", features = ["derive"], version = "2.0.0" }
-minterest-primitives = { git = "https://github.com/minterest-finance/minterest-chain-node" }
-chainlink-price-manager = { path = "../minterest-chain-node/pallets/chainlink-price-manager" } 
-node-minterest-runtime = { path = "../minterest-chain-node/runtime" } 
+
+# Minterest Dependencies
+minterest-primitives = { git = "https://github.com/minterest-finance/minterest-chain-node", rev = "67f2522647f3217455bf77e5486d82906a7a1884" }
+chainlink-price-manager = { git = "https://github.com/minterest-finance/minterest-chain-node", rev = "67f2522647f3217455bf77e5486d82906a7a1884" }
+minterest-standalone-runtime = { git = "https://github.com/minterest-finance/minterest-chain-node", rev = "67f2522647f3217455bf77e5486d82906a7a1884" }
+
+# Dependencies for local testing
+# minterest-primitives = { git = "https://github.com/minterest-finance/minterest-chain-node" }
+# chainlink-price-manager = { path = "../minterest-chain-node/pallets/chainlink-price-manager" }
+# minterest-standalone-runtime = { path = "../minterest-chain-node/runtime/standalone" }
+
 sp-core = { default-features = false, git = "https://github.com/paritytech/substrate",  branch = "polkadot-v0.9.8" }
 sp-keyring = { default-features = false, git = "https://github.com/paritytech/substrate",  branch = "polkadot-v0.9.8" }
 frame-system = { git = "https://github.com/paritytech/substrate", branch = "polkadot-v0.9.8"}
