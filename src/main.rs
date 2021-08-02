@@ -15,16 +15,16 @@ use substrate_api_client::{
     UncheckedExtrinsicV4, XtStatus,
 };
 
-use minterest_primitives::currency::CurrencyType::UnderlyingAsset;
 use std::sync::mpsc::{channel, Receiver};
 use std::{env, thread, time};
 
-fn get_feed_id(currency_id: CurrencyId) -> u32 {
-    match currency_id {
-        ETH => 0,
-        DOT => 1,
-        KSM => 2,
-        BTC => 3,
+fn get_currency_id(feed_id: u32) -> CurrencyId {
+    // See create_feeds
+    match feed_id {
+        0 => ETH,
+        1 => DOT,
+        2 => KSM,
+        3 => BTC,
         _ => panic!(),
     }
 }
@@ -100,13 +100,13 @@ impl Configuration {
 impl Service {
     // This function for testing purpose to automate add oracles
     fn create_feeds(&self) {
+        // sequence is important! (see get_feed_id and get_currency_id)
         log::info!("Start feed creating. Don't interrupt the service!");
         self.create_chainlink_feed(ETH);
         self.create_chainlink_feed(DOT);
         self.create_chainlink_feed(KSM);
         self.create_chainlink_feed(BTC);
         log::info!("Feed creating is finished");
-        // sequence is important! (see get_feed_id)
     }
 
     // If at least one feed was created we assume that this service already created feeds
@@ -212,33 +212,24 @@ impl Service {
                                 log::info!("Chainlink price manager event: {:?}", be);
                                 match &be {
                                     chainlink_price_manager::Event::InitiateNewRound(
-                                        _feed_id, // We ignore feed id because we know in which sequence we created feeds
+                                        feed_id,
                                         round_id,
                                     ) => {
-                                        // TODO rework this. Now we accept event for each currency
-                                        // and need to feed price only for requested ones but not
-                                        // for all
                                         let prices = get_prices();
-                                        for token in CurrencyId::get_enabled_tokens_in_protocol(
-                                            UnderlyingAsset,
-                                        ) {
-                                            let token_name = underlying_to_string(token);
-                                            let price = prices[token_name]["usd"];
-                                            let converted_price =
-                                                convert_rust_decimal_to_u128_18(&price);
-                                            log::info!(
-                                            "Token name: {:?}, price: {:?}, converted_price: {:?}",
-                                            underlying_to_string(token),
+
+                                        let token_name =
+                                            underlying_to_string(get_currency_id(*feed_id));
+                                        let price = prices[token_name]["usd"];
+                                        let converted_price =
+                                            convert_rust_decimal_to_u128_18(&price);
+                                        log::info!(
+                                            "Token name: {:?}, Round: {:?}, price: {:?}, converted_price: {:?}",
+                                            token_name,
+                                            round_id,
                                             price,
                                             converted_price
                                         );
-
-                                            self.submit_new_value(
-                                                get_feed_id(token),
-                                                *round_id,
-                                                converted_price,
-                                            );
-                                        }
+                                        self.submit_new_value(*feed_id, *round_id, converted_price);
                                     }
                                     _ => {
                                         log::debug!("ignoring unsupported balances event");
@@ -295,8 +286,12 @@ impl Service {
             api.runtime_version.transaction_version
         );
         self.api_nonce += 1;
-        api.send_extrinsic(xt.hex_encode(), XtStatus::Ready)
-            .unwrap();
+        if api
+            .send_extrinsic(xt.hex_encode(), XtStatus::Ready)
+            .is_err()
+        {
+            log::error!("Fail to send extrinsic");
+        }
     }
 
     pub fn run(&mut self) {
