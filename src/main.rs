@@ -18,6 +18,44 @@ use substrate_api_client::{
 use std::sync::mpsc::{channel, Receiver};
 use std::{env, thread, time};
 
+// request for coinmarketcap (sandbox key)
+// curl -H "X-CMC_PRO_API_KEY: b54bcf4d-1bca-4e8e-9a24-22ff2c3d462c" -H "Accept: application/json" -d "symbol=ETH,BTC,DOT,KSM" -G https://sandbox-api.coinmarketcap.com/v1/cryptocurrency/quotes/latest
+// get your own API key and use COINMARKETCAP_API_URL to use real data
+// const COINMARKETCAP_API_URL: &'static str = "https://pro-api.coinmarketcap.com/v1/cryptocurrency/quotes/latest"
+
+// coinmarketcap api key (demo env)
+const COINMARKETCAP_DEMO_KEY: &'static str = "b54bcf4d-1bca-4e8e-9a24-22ff2c3d462c";
+const COINMARKETCAP_DEMO_API_URL: &'static str = "https://sandbox-api.coinmarketcap.com/v1/cryptocurrency/quotes/latest";
+
+use rust_decimal::Decimal;
+use serde::Deserialize;
+use std::collections::HashMap;
+
+#[derive(Default, Debug, Clone, PartialEq, serde_derive::Serialize, serde_derive::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Root {
+    pub data: HashMap<String, Data>,
+}
+
+#[derive(Default, Debug, Clone, PartialEq, serde_derive::Serialize, serde_derive::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Data {
+    pub quote: Quote,
+}
+
+#[derive(Default, Debug, Clone, PartialEq, serde_derive::Serialize, serde_derive::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Quote {
+    #[serde(rename = "USD")]
+    pub usd: Usd,
+}
+
+#[derive(Default, Debug, Clone, PartialEq, serde_derive::Serialize, serde_derive::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Usd {
+    pub price: Decimal,
+}
+
 fn get_currency_id(feed_id: u32) -> CurrencyId {
     // See create_feeds
     match feed_id {
@@ -53,6 +91,25 @@ fn get_prices() -> SimplePrices {
         client.simple_price(req).await
     })
     .unwrap()
+}
+
+fn get_prices_coinmarketcap() -> HashMap<String, Decimal> {
+    let response = reqwest::blocking::Client::new()
+        .get(COINMARKETCAP_DEMO_API_URL)
+        .header("X-CMC_PRO_API_KEY", COINMARKETCAP_DEMO_KEY)
+        .header("Accept", "application/json")
+        .query(&[("symbol", "ETH,DOT,KSM,BTC")])
+        .send()
+        .unwrap()
+        .text()
+        .unwrap();
+
+    let deserialized: Root = serde_json::from_str(&response).unwrap();
+    deserialized
+        .data
+        .into_iter()
+        .map(|(key, value)| (key, value.quote.usd.price))
+        .collect()
 }
 
 fn underlying_to_string(cur_id: CurrencyId) -> &'static str {
@@ -229,6 +286,11 @@ impl Service {
                                             price,
                                             converted_price
                                         );
+
+                                        // TODO: call coinmarketcap instead if needed
+                                        // let coinmarketcap_prices = get_prices_coinmarketcap();
+                                        // log::info!("coinmarketcap prices : {:?}", coinmarketcap_prices);
+
                                         self.submit_new_value(*feed_id, *round_id, converted_price);
                                     }
                                     _ => {

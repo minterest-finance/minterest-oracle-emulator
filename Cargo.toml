@@ -154,5 +154,9 @@ frame-system = { git = "https://github.com/paritytech/substrate", branch = "polk
 coingecko = { git = "https://github.com/mmstick/coingecko-rs", rev = "1b99e9299327ee6e97930faa955ac02713eb8107"}
 isahc = { version = "0.9", default-features = false, features = ["http2", "text-decoding"]}
 futures = "0.3"
-rust_decimal = "1.14"
+rust_decimal = {version = "1.14", features = ["serde-arbitrary-precision"]}
 rust_decimal_macros = "1.14"
+serde = { version = "1.0", features = ["derive"] }
+serde_derive = "*"
+serde_json = { version = "*", features = ["arbitrary_precision"] }
+reqwest = { version = "0.11", features = ["blocking"] }
